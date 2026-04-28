@@ -2,7 +2,10 @@ import os
 import json
 from pathlib import Path
 from flask import Flask, render_template, send_file, jsonify, request, abort, redirect, url_for
-from flask_cloudflared import run_with_cloudflared
+import io
+import qrcode
+from flask import Response
+from flask_cloudflared import run_with_cloudflared, get_cloudflared_url
 
 app = Flask(__name__)
 
@@ -271,6 +274,18 @@ def api_config_remove():
     COMICS_DIRS.pop(idx)
     _save_config({"comics_dirs": [str(d) for d in COMICS_DIRS]})
     return jsonify({"ok": True, "comics_dirs": [str(d) for d in COMICS_DIRS]})
+
+
+@app.route("/api/tunnel-qr")
+def api_tunnel_qr():
+    url = get_cloudflared_url()
+    if not url:
+        return jsonify({"error": "Tunnel not ready yet"}), 503
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="image/png")
 
 
 if __name__ == "__main__":

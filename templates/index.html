@@ -100,17 +100,68 @@ body  {
   letter-spacing: .06em;
 }
 
-/* settings button */
-.site-header__settings {
+/* header actions group */
+.site-header__actions {
+  display: flex;
+  margin-left: 6px;
+}
+.site-header__actions > * {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: 50%;
+  width: 28px; height: 28px;
   border: 1px solid var(--border); background: transparent;
   color: var(--muted); cursor: pointer;
   transition: all .15s;
-  margin-left: 6px;
 }
-.site-header__settings:hover { border-color: var(--ink); color: var(--ink); }
-.site-header__settings svg { display: block; }
+.site-header__actions > :first-child {
+  border-radius: 50% 0 0 50%;
+  border-right: none;
+}
+.site-header__actions > :last-child {
+  border-radius: 0 50% 50% 0;
+}
+.site-header__actions > *:hover { border-color: var(--ink); color: var(--ink); }
+.site-header__actions svg { display: block; }
+
+/* QR button */
+.site-header__qr { position: relative; }
+
+/* QR popover */
+.qr-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: var(--s2);
+  box-shadow: 0 12px 32px rgba(17,16,16,.18);
+  display: none;
+  z-index: 300;
+}
+.site-header__qr:hover .qr-popover,
+.qr-popover:hover { display: block; }
+
+.qr-popover img {
+  display: block;
+  width: 180px;
+  height: 180px;
+  border-radius: 3px;
+}
+.qr-popover__label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: .06em;
+  text-align: center;
+  margin-top: 8px;
+}
+.qr-popover__error {
+  font-family: 'Syne Mono', monospace;
+  font-size: 10px;
+  color: var(--red);
+  padding: var(--s2);
+  white-space: nowrap;
+}
 
 /* ─────────────────────────────────────────────────────────
    HERO  — balanced two-column block
@@ -511,12 +562,39 @@ body  {
   <div class="site-header__inner">
     <a class="site-header__logo" href="/">Vault Library</a>
     <span class="site-header__tag">Comic Reader</span>
-    <a class="site-header__settings" href="/setup" aria-label="Manage comics folders" title="Comics folder settings">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    <span class="site-header__actions">
+      <a href="/setup" aria-label="Manage comics folders" title="Comics folder settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </a>
+      <span class="site-header__qr" aria-label="Scan QR to open on phone" title="Scan QR to open on phone">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/>
+        <rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/>
+        <line x1="14" y1="14" x2="14" y2="14.01"/>
+        <line x1="18" y1="14" x2="18" y2="14.01"/>
+        <line x1="16" y1="18" x2="16" y2="18.01"/>
+        <line x1="18" y1="18" x2="18" y2="18.01"/>
+        <line x1="14" y1="18" x2="14" y2="18.01"/>
+        <line x1="18" y1="16" x2="18" y2="16.01"/>
+        <line x1="16" y1="16" x2="16" y2="16.01"/>
+        <line x1="14" y1="16" x2="14" y2="16.01"/>
+        <rect x="14" y="14" width="7" height="1"/>
+        <rect x="14" y="16" width="1" height="5"/>
+        <rect x="16" y="18" width="5" height="1"/>
+        <rect x="20" y="14" width="1" height="5"/>
+        <rect x="14" y="20" width="7" height="1"/>
       </svg>
-    </a>
+      <div class="qr-popover">
+        <img class="qr-popover__img" src="" alt="QR code for tunnel URL" />
+        <div class="qr-popover__label">Scan to open on phone</div>
+        <div class="qr-popover__error" style="display:none">Tunnel not ready</div>
+      </div>
+    </span>
+    </span>
   </div>
 </header>
 
@@ -531,7 +609,7 @@ body  {
       <div class="hero__left">
         <p class="hero__label" aria-hidden="true">Duc's collection</p>
         <h1 class="hero__heading" id="hero-heading">
-          Welcome to<br>my Lib<em>r</em>ary
+          Welcome to<br>my Library
         </h1>
       </div>
 
@@ -711,6 +789,51 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 loadLibrary();
+
+/* ── QR POPOVER ───────────────────────────────── */
+(function() {
+  const qrBtn = document.querySelector('.site-header__qr');
+  const qrImg = qrBtn.querySelector('.qr-popover__img');
+  const qrErr = qrBtn.querySelector('.qr-popover__error');
+  const qrLabel = qrBtn.querySelector('.qr-popover__label');
+  let loaded = false;
+  let polling = false;
+
+  function loadQr() {
+    if (loaded || polling) return;
+    polling = true;
+    (function tryLoad() {
+      fetch('/api/tunnel-qr')
+        .then(res => {
+          if (res.ok) return res.blob();
+          throw new Error('not ready');
+        })
+        .then(blob => {
+          qrImg.src = URL.createObjectURL(blob);
+          qrImg.style.display = 'block';
+          qrErr.style.display = 'none';
+          qrLabel.style.display = 'block';
+          loaded = true;
+          polling = false;
+        })
+        .catch(() => {
+          qrErr.style.display = 'block';
+          qrImg.style.display = 'none';
+          qrLabel.style.display = 'none';
+          polling = false;
+          setTimeout(function() {
+            if (!loaded) {
+              polling = true;
+              tryLoad();
+            }
+          }, 3000);
+        });
+    })();
+  }
+
+  qrBtn.addEventListener('mouseenter', loadQr);
+  qrBtn.addEventListener('focus', loadQr);
+})();
 </script>
 </body>
 </html>
