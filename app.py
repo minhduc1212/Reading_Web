@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from flask import Flask, render_template, send_file, jsonify, request, abort, redirect, url_for
+from flask_cloudflared import run_with_cloudflared
 
 app = Flask(__name__)
 
@@ -277,4 +278,5 @@ if __name__ == "__main__":
         d.mkdir(parents=True, exist_ok=True)
     print(f"[books]  Comics dirs : {[str(d) for d in COMICS_DIRS]}")
     print(f"[web]  Open        : http://localhost:5000")
-    app.run(debug=True, port=5000)
+    run_with_cloudflared(app)
+    app.run(host="0.0.0.0", port=5000)
