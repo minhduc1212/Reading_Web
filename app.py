@@ -133,7 +133,9 @@ def scan_entry(path: Path) -> dict | None:
 @app.route("/")
 def index():
     if not COMICS_DIRS:
-        return redirect(url_for("setup"))
+        rows = db.execute_query("SELECT COUNT(*) FROM comics")
+        if not rows or rows[0][0] == 0:
+            return redirect(url_for("setup"))
     return render_template("index.html")
 
 
@@ -145,20 +147,35 @@ def setup():
 @app.route("/api/library")
 def api_library():
     rows = db.execute_query(
-        "SELECT title, author, genres, description, cover_image, path, type, pages, chapters FROM comics"
+        "SELECT id, title, author, genres, description, cover_image, path, type, pages, chapters FROM comics"
     )
     entries = []
     for row in rows:
-        title, author, genres, description, cover_image, path_str, comic_type, pages, chapters = row
+        comic_id, title, author, genres, description, cover_image, path_str, comic_type, pages, chapters = row
         comic_path = Path(path_str)
 
-        dir_index = 0
-        dir_path_str = str(COMICS_DIRS[0]) if COMICS_DIRS else ""
+        dir_index = -1
+        dir_path_str = ""
         for di, root in enumerate(COMICS_DIRS):
-            if path_str.startswith(str(root)):
-                dir_index = di
-                dir_path_str = str(root)
-                break
+            try:
+                if comic_path.is_relative_to(root):
+                    dir_index = di
+                    dir_path_str = str(root)
+                    rel_path = comic_path.relative_to(root).as_posix()
+                    break
+            except AttributeError:
+                try:
+                    rel_path = comic_path.relative_to(root).as_posix()
+                    dir_index = di
+                    dir_path_str = str(root)
+                    break
+                except ValueError:
+                    pass
+
+        if dir_index == -1:
+            dir_index = 10000 + comic_id
+            dir_path_str = path_str
+            rel_path = comic_path.name
 
         entry = {
             "name": title,
@@ -168,9 +185,10 @@ def api_library():
             "cover_path": cover_image,
             "dir_index": dir_index,
             "dir_path": dir_path_str,
+            "rel_path": rel_path,
         }
         if cover_image:
-            entry["cover"] = f"/img/{dir_index}/{title}/{cover_image}"
+            entry["cover"] = f"/img/{dir_index}/{rel_path}/{cover_image}"
         entries.append(entry)
 
     print(f"--- DB: Hiển thị {len(entries)} truyện ---\n")
@@ -179,15 +197,24 @@ def api_library():
 
 @app.route("/api/chapters/<int:dir_index>/<path:comic_path>")
 def api_chapters(dir_index, comic_path):
-    if dir_index >= len(COMICS_DIRS):
-        abort(404)
-    base = COMICS_DIRS[dir_index] / comic_path
-    if not base.is_dir():
-        parts = Path(comic_path).parts
-        if parts and parts[0] == COMICS_DIRS[dir_index].name:
-            base = COMICS_DIRS[dir_index] / Path(*parts[1:])
+    if dir_index >= 10000:
+        comic_id = dir_index - 10000
+        rows = db.execute_query("SELECT path FROM comics WHERE id = ?", (comic_id,))
+        if not rows:
+            abort(404)
+        base = Path(rows[0][0])
         if not base.is_dir():
             abort(404)
+    else:
+        if dir_index >= len(COMICS_DIRS):
+            abort(404)
+        base = COMICS_DIRS[dir_index] / comic_path
+        if not base.is_dir():
+            parts = Path(comic_path).parts
+            if parts and parts[0] == COMICS_DIRS[dir_index].name:
+                base = COMICS_DIRS[dir_index] / Path(*parts[1:])
+            if not base.is_dir():
+                abort(404)
             
     chapters = []
     for c in sorted(p for p in base.iterdir() if not p.name.startswith('.')):
@@ -229,15 +256,29 @@ def api_chapters(dir_index, comic_path):
 
 @app.route("/api/pages/<int:dir_index>/<path:chapter_path>")
 def api_pages(dir_index, chapter_path):
-    if dir_index >= len(COMICS_DIRS):
-        abort(404)
-    base = COMICS_DIRS[dir_index] / chapter_path
-    if not base.is_dir():
+    if dir_index >= 10000:
+        comic_id = dir_index - 10000
+        rows = db.execute_query("SELECT path FROM comics WHERE id = ?", (comic_id,))
+        if not rows:
+            abort(404)
+        comic_base = Path(rows[0][0])
         parts = Path(chapter_path).parts
-        if parts and parts[0] == COMICS_DIRS[dir_index].name:
-            base = COMICS_DIRS[dir_index] / Path(*parts[1:])
+        if parts and parts[0] == comic_base.name:
+            base = comic_base / Path(*parts[1:])
+        else:
+            base = comic_base / chapter_path
         if not base.is_dir():
             abort(404)
+    else:
+        if dir_index >= len(COMICS_DIRS):
+            abort(404)
+        base = COMICS_DIRS[dir_index] / chapter_path
+        if not base.is_dir():
+            parts = Path(chapter_path).parts
+            if parts and parts[0] == COMICS_DIRS[dir_index].name:
+                base = COMICS_DIRS[dir_index] / Path(*parts[1:])
+            if not base.is_dir():
+                abort(404)
             
     imgs = []
     try:
@@ -252,16 +293,31 @@ def api_pages(dir_index, chapter_path):
 
 @app.route("/img/<int:dir_index>/<path:rel>")
 def serve_image(dir_index, rel):
-    if dir_index >= len(COMICS_DIRS):
-        abort(404)
-    full = COMICS_DIRS[dir_index] / rel
-    if not full.is_file() or not is_image(full):
+    if dir_index >= 10000:
+        comic_id = dir_index - 10000
+        rows = db.execute_query("SELECT path FROM comics WHERE id = ?", (comic_id,))
+        if not rows:
+            abort(404)
+        comic_base = Path(rows[0][0])
         parts = Path(rel).parts
-        if parts and parts[0] == COMICS_DIRS[dir_index].name:
-            full = COMICS_DIRS[dir_index] / Path(*parts[1:])
+        if parts and parts[0] == comic_base.name:
+            full = comic_base / Path(*parts[1:])
+        else:
+            full = comic_base / rel
         if not full.is_file() or not is_image(full):
             abort(404)
-    return send_file(full)
+        return send_file(full)
+    else:
+        if dir_index >= len(COMICS_DIRS):
+            abort(404)
+        full = COMICS_DIRS[dir_index] / rel
+        if not full.is_file() or not is_image(full):
+            parts = Path(rel).parts
+            if parts and parts[0] == COMICS_DIRS[dir_index].name:
+                full = COMICS_DIRS[dir_index] / Path(*parts[1:])
+            if not full.is_file() or not is_image(full):
+                abort(404)
+        return send_file(full)
 
 
 @app.route("/read/<int:dir_index>/<path:read_path>")

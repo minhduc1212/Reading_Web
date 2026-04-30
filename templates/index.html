@@ -722,8 +722,8 @@ function render() {
   /* cards */
   grid.innerHTML = list.map(c => {
     const href  = c.type === 'series'
-      ? `/series/${c.dir_index}/${encodeURIComponent(c.name)}`
-      : `/read/${c.dir_index}/${encodeURIComponent(c.name)}`;
+      ? `/series/${c.dir_index}/${encodeURIComponent(c.rel_path)}`
+      : `/read/${c.dir_index}/${encodeURIComponent(c.rel_path)}`;
 
     const meta   = c.type === 'series'
       ? `${c.chapters} ch.`
