@@ -227,9 +227,21 @@ const title = decodeURIComponent(parts[parts.length - 1]);
 const isChapter = parts.length > 1;
 const seriesName = isChapter ? parts[0] : null;
 
+function setCookie(name, value, days) {
+  const d = new Date();
+  d.setTime(d.getTime() + days * 86400000);
+  document.cookie = name + '=' + encodeURIComponent(value) +
+    ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+}
+
+function getCookie(name) {
+  const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+  return m ? decodeURIComponent(m[2]) : null;
+}
+
 let pages = [];
 let current = 0;
-let mode = 'page';
+let mode = getCookie('reader_mode') || 'page';
 let hudTimer;
 let chapters = [];
 let currentChapIndex = -1;
@@ -262,6 +274,7 @@ async function init() {
   goTo(0);
   preload(1);
   setTimeout(() => document.getElementById('key-hint').classList.add('gone'), 3500);
+  setMode(mode);
 }
 
 // ── NAVIGATION ──────────────────────────────────────────────
@@ -391,6 +404,7 @@ function buildScrollMode() {
 // ── MODE SWITCHING ───────────────────────────────────────────
 function setMode(m) {
   mode = m;
+  setCookie('reader_mode', m, 365);
   const pageWrap   = document.getElementById('page-wrap');
   const scrollWrap = document.getElementById('scroll-wrap');
   const canvas     = document.getElementById('canvas');
