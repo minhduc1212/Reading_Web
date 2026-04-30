@@ -7,7 +7,7 @@
  bug: in cookies, when add new path -> get the comics -> save comics in db -> but when delete the path -> not any path in cookies -> cannot out the setup page though still have comic in db (which still can read). So eliminate the func that if no path in cookies, force to go to setup page, force to stay in setup page when there are no comic in db -> fixed
  - add button to go to the next chapter and previous chapter, if there is no next chapter, the button will be disabled, if there is no previous chapter, the button will be disabled. Or when scroll to the end of the chapter, automatically go to the next chapter, when scroll to the top of the chapter, automatically go to the previous chapter
  - add user, login and permission to add comics, only admin can add comics, other users can only read comics or if user add comics, it means that the comics will be added to the server of admin, and other users can read the comics from the server of admin, but they cannot add comics to their own library, they can only read comics from the server of admin
- - add logging
+- add logging -> done
  - add epub, pdf, ...
  - 3 mode:  user can clone the project and share the comics to the others 
             or create the server for everybpdy share the comics and save to the server of admin

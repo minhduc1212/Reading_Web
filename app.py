@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from pathlib import Path
 from flask import Flask, render_template, send_file, jsonify, request, abort, redirect, url_for
 import io
@@ -9,6 +10,17 @@ from flask_cloudflared import run_with_cloudflared, get_cloudflared_url
 from models import Database, initialize_database
 
 app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("vault_library.log", encoding="utf-8")
+    ]
+)
+logger = logging.getLogger(__name__)
 
 CONFIG_FILE = Path(__file__).parent / ".comics_config.json"
 DB_PATH = Path(__file__).parent / "comics.db"
@@ -23,8 +35,10 @@ initialize_database(db)
 def _add_comics_from_dir(root: Path) -> int:
     """Scan a directory for comic subfolders and insert them into the DB. Returns count added."""
     if not root.is_dir():
+        logger.warning(f"Failed to scan directory, path does not exist or is not a directory: {root}")
         return 0
     count = 0
+    logger.info(f"Scanning directory for comics: {root}")
     for child in sorted(p for p in root.iterdir() if not p.name.startswith('.') and p.is_dir()):
         meta = scan_entry(child)
         if meta is None:
@@ -34,6 +48,7 @@ def _add_comics_from_dir(root: Path) -> int:
             (meta["name"], "", "", "", meta.get("cover_path", ""), str(child), meta["type"], meta["pages"], meta["chapters"])
         )
         count += 1
+    logger.info(f"Added {count} comics from {root}")
     return count
 
 
@@ -41,6 +56,7 @@ def _remove_comics_by_root(root: Path) -> int:
     """Delete all comics whose path is under the given root directory."""
     root_str = str(root)
     db.execute_query("DELETE FROM comics WHERE path LIKE ?", (root_str + "%",))
+    logger.info(f"Removed comics under root path: {root_str}")
     # sqlite3 doesn't expose rowcount easily; just return 0 as indicator
     return 0
 
@@ -191,7 +207,7 @@ def api_library():
             entry["cover"] = f"/img/{dir_index}/{rel_path}/{cover_image}"
         entries.append(entry)
 
-    print(f"--- DB: Hiển thị {len(entries)} truyện ---\n")
+    logger.info(f"DB: Displaying {len(entries)} comics")
     return jsonify(entries)
 
 
@@ -341,13 +357,17 @@ def api_config_add():
     data = request.get_json(silent=True) or {}
     new_path = data.get("path", "").strip()
     if not new_path:
+        logger.warning("api_config_add: No path provided")
         return jsonify({"error": "No path provided"}), 400
     p = Path(new_path).expanduser().resolve()
     if not p.exists():
+        logger.warning(f"api_config_add: Path does not exist: {p}")
         return jsonify({"error": "Path does not exist"}), 400
     if not p.is_dir():
+        logger.warning(f"api_config_add: Path is not a directory: {p}")
         return jsonify({"error": "Path is not a directory"}), 400
     if p in COMICS_DIRS:
+        logger.warning(f"api_config_add: Path already added: {p}")
         return jsonify({"error": "Path already added"}), 409
     COMICS_DIRS.append(p)
     _save_config({"comics_dirs": [str(d) for d in COMICS_DIRS]})
@@ -361,6 +381,7 @@ def api_config_remove():
     data = request.get_json(silent=True) or {}
     idx = data.get("index")
     if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(COMICS_DIRS):
+        logger.warning(f"api_config_remove: Invalid index: {idx}")
         return jsonify({"error": "Invalid index"}), 400
     removed_dir = COMICS_DIRS.pop(idx)
     _save_config({"comics_dirs": [str(d) for d in COMICS_DIRS]})
@@ -374,12 +395,15 @@ def api_comics_add():
     title = data.get("title", "").strip()
     path_str = data.get("path", "").strip()
     if not title or not path_str:
+        logger.warning("api_comics_add: Title and path are required")
         return jsonify({"error": "Title and path are required"}), 400
 
     p = Path(path_str).expanduser().resolve()
     if not p.exists():
+        logger.warning(f"api_comics_add: Path does not exist: {p}")
         return jsonify({"error": "Path does not exist"}), 400
     if not p.is_dir():
+        logger.warning(f"api_comics_add: Path is not a directory: {p}")
         return jsonify({"error": "Path is not a directory"}), 400
 
     author = data.get("author", "").strip()
@@ -389,6 +413,7 @@ def api_comics_add():
 
     meta = scan_entry(p)
     if meta is None:
+        logger.warning(f"api_comics_add: No images found in the folder: {p}")
         return jsonify({"error": "No images found in the folder"}), 400
 
     if not cover_image:
@@ -398,6 +423,7 @@ def api_comics_add():
         "INSERT INTO comics (title, author, genres, description, cover_image, path, type, pages, chapters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (title, author, genres, description, cover_image, str(p), meta["type"], meta["pages"], meta["chapters"])
     )
+    logger.info(f"Added single comic: {title} at {p}")
     return jsonify({"ok": True, "comic": {"title": title, "path": str(p)}})
 
 
@@ -405,6 +431,7 @@ def api_comics_add():
 def api_tunnel_qr():
     url = get_cloudflared_url()
     if not url:
+        logger.warning("api_tunnel_qr: Tunnel not ready yet")
         return jsonify({"error": "Tunnel not ready yet"}), 503
     img = qrcode.make(url)
     buf = io.BytesIO()
@@ -416,7 +443,7 @@ def api_tunnel_qr():
 if __name__ == "__main__":
     for d in COMICS_DIRS:
         d.mkdir(parents=True, exist_ok=True)
-    print(f"[books]  Comics dirs : {[str(d) for d in COMICS_DIRS]}")
-    print(f"[web]  Open        : http://localhost:5000")
+    logger.info(f"[books]  Comics dirs : {[str(d) for d in COMICS_DIRS]}")
+    logger.info(f"[web]  Open        : http://localhost:5000")
     run_with_cloudflared(app)
     app.run(host="0.0.0.0", port=5000)

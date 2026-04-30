@@ -1,4 +1,7 @@
 import sqlite3
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self, db_name):
@@ -18,12 +21,16 @@ class Database:
             raise Exception("Database connection is not established.")
         
         cursor = self.connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        self.connection.commit()
-        return cursor.fetchall()
+        try:
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            self.connection.commit()
+            return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Database query failed: {e} | Query: {query}")
+            raise
     
 def initialize_database(db):
     create_table_query = """
@@ -42,8 +49,12 @@ def initialize_database(db):
     """
     db.execute_query(create_table_query)
 
+    existing_cols = [row[1] for row in db.execute_query("PRAGMA table_info(comics)")]
+
     for col, col_type in [("type", "TEXT"), ("pages", "INTEGER"), ("chapters", "INTEGER")]:
-        try:
-            db.execute_query(f"ALTER TABLE comics ADD COLUMN {col} {col_type}")
-        except Exception:
-            pass
+        if col not in existing_cols:
+            try:
+                db.execute_query(f"ALTER TABLE comics ADD COLUMN {col} {col_type}")
+            except Exception as e:
+                logger.debug(f"Column {col} alter table failed: {e}")
+                pass
