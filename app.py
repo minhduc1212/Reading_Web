@@ -6,12 +6,61 @@ import io
 import qrcode
 from flask import Response
 from flask_cloudflared import run_with_cloudflared, get_cloudflared_url
+from models import Database, initialize_database
 
 app = Flask(__name__)
 
 CONFIG_FILE = Path(__file__).parent / ".comics_config.json"
+DB_PATH = Path(__file__).parent / "comics.db"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp"}
+
+db = Database(str(DB_PATH))
+db.connect()
+initialize_database(db)
+
+
+def _find_cover(comic_dir: Path) -> str | None:
+    """Return the first image found in a comic folder (filename or relative path for series)."""
+    children = sorted(p for p in comic_dir.iterdir() if not p.name.startswith('.'))
+    images = [c for c in children if is_image(c)]
+    if images:
+        return images[0].name
+
+    for c in children:
+        if c.is_dir():
+            try:
+                for p in sorted(c.rglob("*")):
+                    if is_image(p) and not any(part.startswith('.') for part in p.relative_to(c).parts):
+                        return str(p.relative_to(comic_dir)).replace('\\', '/')
+            except Exception:
+                pass
+    return None
+
+
+def _add_comics_from_dir(root: Path) -> int:
+    """Scan a directory for comic subfolders and insert them into the DB. Returns count added."""
+    if not root.is_dir():
+        return 0
+    count = 0
+    for child in sorted(p for p in root.iterdir() if not p.name.startswith('.') and p.is_dir()):
+        cover = _find_cover(child)
+        if cover is None:
+            continue
+        db.execute_query(
+            "INSERT INTO comics (title, author, genres, description, cover_image, path) VALUES (?, ?, ?, ?, ?, ?)",
+            (child.name, "", "", "", cover, str(child))
+        )
+        count += 1
+    return count
+
+
+def _remove_comics_by_root(root: Path) -> int:
+    """Delete all comics whose path is under the given root directory."""
+    root_str = str(root)
+    db.execute_query("DELETE FROM comics WHERE path LIKE ?", (root_str + "%",))
+    # sqlite3 doesn't expose rowcount easily; just return 0 as indicator
+    return 0
 
 
 def _load_config() -> dict:
@@ -261,7 +310,8 @@ def api_config_add():
         return jsonify({"error": "Path already added"}), 409
     COMICS_DIRS.append(p)
     _save_config({"comics_dirs": [str(d) for d in COMICS_DIRS]})
-    return jsonify({"ok": True, "comics_dirs": [str(d) for d in COMICS_DIRS]})
+    added = _add_comics_from_dir(p)
+    return jsonify({"ok": True, "comics_dirs": [str(d) for d in COMICS_DIRS], "comics_added": added})
 
 
 @app.route("/api/config/remove", methods=["POST"])
@@ -271,8 +321,9 @@ def api_config_remove():
     idx = data.get("index")
     if idx is None or not isinstance(idx, int) or idx < 0 or idx >= len(COMICS_DIRS):
         return jsonify({"error": "Invalid index"}), 400
-    COMICS_DIRS.pop(idx)
+    removed_dir = COMICS_DIRS.pop(idx)
     _save_config({"comics_dirs": [str(d) for d in COMICS_DIRS]})
+    _remove_comics_by_root(removed_dir)
     return jsonify({"ok": True, "comics_dirs": [str(d) for d in COMICS_DIRS]})
 
 
