@@ -63,6 +63,7 @@
   }
   .hud-btn:hover{border-color:var(--ink);background:var(--ink);color:var(--bg);}
   .hud-btn:disabled{opacity:.25;cursor:default;}
+  .ch-btn{margin-left:4px;border-color:var(--muted);font-size:12px;}
 
   /* ── VIEW MODE TOGGLE ────────────────────────────────────── */
   .mode-toggle{
@@ -187,8 +188,10 @@
   <a class="hud-back" id="hud-back-link" href="/">← Back</a>
   <span id="hud-title">Loading…</span>
   <span id="hud-counter">— / —</span>
-  <button class="hud-btn" id="prev-btn" title="Previous (←)">←</button>
-  <button class="hud-btn" id="next-btn" title="Next (→)">→</button>
+  <button class="hud-btn" id="prev-btn" title="Previous page (←)">←</button>
+  <button class="hud-btn" id="next-btn" title="Next page (→)">→</button>
+  <button class="hud-btn ch-btn" id="prev-ch-btn" title="Previous chapter">«</button>
+  <button class="hud-btn ch-btn" id="next-ch-btn" title="Next chapter">»</button>
   <div class="mode-toggle">
     <button class="mode-btn active" id="btn-page" onclick="setMode('page')">PAGE</button>
     <button class="mode-btn" id="btn-scroll" onclick="setMode('scroll')">SCROLL</button>
@@ -228,6 +231,9 @@ let pages = [];
 let current = 0;
 let mode = 'page';
 let hudTimer;
+let chapters = [];
+let currentChapIndex = -1;
+let scrollChapTimer = null;
 
 // ── INIT ────────────────────────────────────────────────────
 let displayTitle = title;
@@ -243,6 +249,15 @@ async function init() {
     document.getElementById('hud-title').textContent = 'No pages found';
     return;
   }
+
+  if (isChapter) {
+    try {
+      const chRes = await fetch(`/api/chapters/${dirIndex}/${seriesName}`);
+      chapters = await chRes.json();
+      currentChapIndex = chapters.findIndex(ch => ch.name === title);
+    } catch {}
+  }
+
   buildThumbs();
   goTo(0);
   preload(1);
@@ -276,17 +291,38 @@ function preload(idx) {
   if (idx + 1 < pages.length) { const p = new Image(); p.src = pages[idx + 1]; }
 }
 
-function next() { goTo(current + 1); }
-function prev() { goTo(current - 1); }
+function next() {
+  if (current < pages.length - 1) { goTo(current + 1); }
+  else if (currentChapIndex >= 0 && currentChapIndex < chapters.length - 1) { navigateToChapter(currentChapIndex + 1); }
+}
+function prev() {
+  if (current > 0) { goTo(current - 1); }
+  else if (currentChapIndex > 0) { navigateToChapter(currentChapIndex - 1); }
+}
+
+function navigateToChapter(idx) {
+  const ch = chapters[idx];
+  if (ch) window.location = `/read/${dirIndex}/${ch.path}`;
+}
 
 // ── HUD ─────────────────────────────────────────────────────
 function updateHud() {
   document.getElementById('hud-counter').textContent =
     `${current + 1} / ${pages.length}`;
-  document.getElementById('prev-btn').disabled = current === 0;
-  document.getElementById('next-btn').disabled = current === pages.length - 1;
-  document.getElementById('prev-btn2').disabled = current === 0;
-  document.getElementById('next-btn2').disabled = current === pages.length - 1;
+
+  const hasPrev = current > 0 || currentChapIndex > 0;
+  const hasNext = current < pages.length - 1 || (currentChapIndex >= 0 && currentChapIndex < chapters.length - 1);
+  document.getElementById('prev-btn').disabled = !hasPrev;
+  document.getElementById('next-btn').disabled = !hasNext;
+  document.getElementById('prev-btn2').disabled = !hasPrev;
+  document.getElementById('next-btn2').disabled = !hasNext;
+
+  if (chapters.length > 1) {
+    document.getElementById('prev-ch-btn').style.display = '';
+    document.getElementById('next-ch-btn').style.display = '';
+    document.getElementById('prev-ch-btn').disabled = currentChapIndex <= 0;
+    document.getElementById('next-ch-btn').disabled = currentChapIndex >= chapters.length - 1;
+  }
 
   const pct = pages.length > 1 ? (current / (pages.length - 1)) * 100 : 100;
   document.documentElement.style.setProperty('--progress', pct + '%');
@@ -381,7 +417,40 @@ function setMode(m) {
     // keep HUD visible in scroll mode
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('bottom-hud').classList.remove('hidden');
+    // attach chapter scroll detection
+    attachScrollChapterDetect(scrollWrap);
   }
+
+  if (m === 'page') {
+    detachScrollChapterDetect();
+  }
+}
+
+// ── SCROLL CHAPTER DETECT ──────────────────────────────────
+function attachScrollChapterDetect(wrap) {
+  detachScrollChapterDetect();
+  if (currentChapIndex < 0 || chapters.length <= 1) return;
+  document.getElementById('canvas').addEventListener('scroll', onScrollChapter);
+}
+
+function detachScrollChapterDetect() {
+  document.getElementById('canvas').removeEventListener('scroll', onScrollChapter);
+  clearTimeout(scrollChapTimer);
+}
+
+function onScrollChapter() {
+  const canvas = document.getElementById('canvas');
+  clearTimeout(scrollChapTimer);
+  scrollChapTimer = setTimeout(() => {
+    const atTop = canvas.scrollTop <= 5;
+    const atBottom = canvas.scrollTop + canvas.clientHeight >= canvas.scrollHeight - 50;
+
+    if (atBottom && currentChapIndex < chapters.length - 1) {
+      navigateToChapter(currentChapIndex + 1);
+    } else if (atTop && currentChapIndex > 0) {
+      navigateToChapter(currentChapIndex - 1);
+    }
+  }, 600);
 }
 
 // ── EVENTS ───────────────────────────────────────────────────
@@ -389,6 +458,12 @@ document.getElementById('prev-btn').onclick  = prev;
 document.getElementById('next-btn').onclick  = next;
 document.getElementById('prev-btn2').onclick = prev;
 document.getElementById('next-btn2').onclick = next;
+document.getElementById('prev-ch-btn').onclick = function() {
+  if (currentChapIndex > 0) navigateToChapter(currentChapIndex - 1);
+};
+document.getElementById('next-ch-btn').onclick = function() {
+  if (currentChapIndex < chapters.length - 1) navigateToChapter(currentChapIndex + 1);
+};
 
 document.getElementById('zone-prev').onclick = prev;
 document.getElementById('zone-next').onclick = next;
